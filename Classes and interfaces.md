@@ -314,8 +314,7 @@ Used only if the `ImageType` is brightfield.
 * Making new commands workflow-friendly takes extra effort
 
 
-
-## Core classes: Objects, ROIs, classifications & measurements
+## Core classes: Objects, ROIs, classifications & measurements
 
 
 ### [PathObject](https://qupath.github.io/javadoc/docs/qupath/lib/objects/PathObject.html)
@@ -352,7 +351,7 @@ Implemented in subclasses.
 
 
 
-## Core classes: Projects
+## Core classes: Projects
 
 
 ### [Project](https://qupath.github.io/javadoc/docs/qupath/lib/projects/Project.html)
@@ -368,7 +367,7 @@ Implemented in subclasses.
 
 
 
-## Core classes: Classifiers
+## Core classes: Classifiers
 
 ### Object classifier
 
@@ -376,7 +375,7 @@ Implemented in subclasses.
 
 
 
-## Processing classes
+## Processing classes
 
 ### PathPlugin
 
@@ -395,5 +394,5 @@ Implemented in subclasses.
 
 ### QuPathExtension
 
-### Image overlay
+### PathOverlay
 
