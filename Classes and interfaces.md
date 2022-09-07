@@ -53,7 +53,7 @@ See [this discussion](https://forum.image.sc/t/create-a-shortcut-button-to-run-a
 * `QP` doesn't (and couldn't) contain everything
 
 
-### QPEx
+### [QPEx](https://qupath.github.io/javadoc/docs/qupath/lib/gui/scripting/QPEx.html)
 
 `QP` is defined in QuPath's core processing module: this means it has no access to JavaFX or anything else in the UI.
 
@@ -77,7 +77,7 @@ println describe(qupath)
   * I *think* this isn't currently a problem because there are no methods in `QPEx` with the same signature as in `QP` (but I could be wrong... and it certainly wasn't always the case)
 
 
-## Core classes: Image data & pixels
+## Core classes: Image data & pixels
 
 These classes are the main ones you need to know about when working with QuPath.
 
