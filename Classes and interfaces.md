@@ -301,12 +301,13 @@ Used only if the `ImageType` is brightfield.
 
 ### [Workflow](https://qupath.github.io/javadoc/docs/qupath/lib/plugins/workflow/Workflow.html)
 
+Used to log specific processing steps, which can then be converted into scripts.
 
+It doesn't log *everything*, primarily because some things are very image-specific (e.g. drawing an annotation)... although perhaps also because some commands might simply not have registered a `WorkflowStep` even with they potentially should.
 
 #### The good
 * Stores *most* key steps for *most* common analysis (important for traceability)
 * Can be used to generate batch scripts
-
 
 #### The bad
 * Doesn't store everything: key steps can be missing (e.g. if the user ran a script)
@@ -316,32 +317,106 @@ Used only if the `ImageType` is brightfield.
 
 ## Core classes: Objects, ROIs, classifications & measurements
 
+Analysis in QuPath generally involves generating and querying objects.
+The idea is explained in the [Objects](https://qupath.readthedocs.io/en/stable/docs/concepts/objects.html) page of the documentation.
+
+A key design decision is that how objects are represented should be kept separated from how they are displayed.
+
+The following classes mostly achieve this... except for the occasional appearance of color properties.
+
+> #### Why is color usually an `Integer`?
+> 
+> Core QuPath classes that have color properties (`PathObject` and `PathClass`) represent color as `Integer`, which uses a packed (A)RGB format.
+> The reason is that I wanted to 
+> * avoid relying on a specific class like `java.awt.Color` or `javafx.scene.paint.Color`
+> * maximize efficiency by avoiding the use of a custom object with multiple fields, while still allowing the color to be missing (which is the reason for `Integer` and not `int`)
+> 
+> Like many things, I don't know if this was the right decision.
+> 
+> In any case, `ColorTools`, `ColorToolsAwt` and `ColorToolsFX` are useful classes when working with colors as integers and converting them to other forms.
+
 
 ### [PathObject](https://qupath.github.io/javadoc/docs/qupath/lib/objects/PathObject.html)
+
+This is the base class for representing 'things' in an image, defined with a region of interest (ROI) and potentially having classifications and measurements associated.
+This is explained further on the [Objects](https://qupath.readthedocs.io/en/stable/docs/concepts/objects.html) page.
+
+`PathObject` itself is an abstract class.
+Useful subclasses include
+* `PathRootObject` (one per image, doesn't have a ROI)
+* `PathAnnotationObject` (for big things)
+* `PathDetectionObject` (for smaller things)
+* `PathTileObject` (for square tiles & superpixels)
+* `PathCellObject` (specifically for cells with a boundary and nucleus)
+* `TMACoreObject` (specifically for tissue microarray cores)
+
+#### The good
+* Simple, flexible and fairly efficient - it seems to serve its job well
+* Maps pretty well to a GeoJSON [Feature object](https://www.rfc-editor.org/rfc/rfc7946#section-3.2) - and would be easy to reimplement in other software
+
+#### The bad
+* I'm not convinced the use of subclasses (`PathAnnotationObject`, `PathDetectionObject` etc.) is a good idea, or if it just adds unnecessary complexity.
+  * In the case of `PathCellObject` perhaps it is (because cells support extra nucleus ROIs)... but even then I don't know if it's the right approach.
+    * A nucleus should perhaps even be a distinct object in its own right, not only a ROI. Then the cell boundary and the nucleus could simply be detections... although they tend to share a classification, so that becomes complicated.
+  * Subclassing allows nasty things like creating [`ParallelTileObject`](https://qupath.github.io/javadoc/docs/qupath/lib/plugins/ParallelTileObject.html) as a trick to handle temporary tiles when processing a large region
+    * I don't have a better way to do this, but it feels like a hack
+  * The use of `instanceof` checks is ugly; `PathObject.isAnnotation()` etc. seems to me nicer than `pathobject instanceof PathAnnotationObject`
+* `TMACoreObject` is another outlier because it only really supports ellipse ROIs - but sometimes TMA cores are close to one another and perhaps supporting arbitrary ROIs would be useful
+
 
 ### [PathClass](https://qupath.github.io/javadoc/docs/qupath/lib/objects/classes/PathClass.html)
 
 Simple class representing a classification.
+For more info, see [Classifications](https://qupath.readthedocs.io/en/stable/docs/concepts/classifications.html).
 
 #### The good
-* Each `PathClass` should be a singleton. This makes it easy to check if objects have exactly the same classification.
+* Each `PathClass` should be a singleton. This makes it easy to check if objects have exactly the same classification, e.g. `pathClass1 == pathClass2`.
 * Immutable...ish. The name and string representation of the `PathClass` can't be changed, but the color can be.
 
 #### The bad
 * Using the colon `:` as a separator has proven problematic for using `PathClass` with some ontologies
+* Need to remember to ensure each `PathClass` is a singleton using [`PathClassFactory`](https://qupath.github.io/javadoc/docs/qupath/lib/objects/classes/PathClassFactory.html)
+* *Sometimes* it may be desirable to support multiple classifications for an object. Currently that can only be achieved using subclasses.
+  * See [Multiplexed analysis](https://qupath.readthedocs.io/en/stable/docs/tutorials/multiplex_analysis.html) for one way to work with that
+  
+#### The in-between
+* `PathClass` replies a bit on hacks to overcome other limitations... although they seem to (more or less) work.
+  * [Intensity classifications](https://qupath.readthedocs.io/en/stable/docs/concepts/classifications.html?#intensity-classifications) are a bit special, used for summary measurements
+  * Adding an asterisk to the name creates an [ignored classification](https://qupath.readthedocs.io/en/stable/docs/concepts/classifications.html?#ignored-classifications)
+    * Off-hand, I couldn't tell you how that interacts with subclassifications...
 
 
 ### [ROI](https://qupath.github.io/javadoc/docs/qupath/lib/roi/interfaces/ROI.html)
 
 Interface defining how a region of interest is represented.
-Implemented in subclasses.
+
+Implementing classes handle specific kinds of ROI, including rectangles, polygons... and the dreaded ellipses.
+
+The original goal in v0.1.2 and before was to have a simple, serializable ROI class with minimal overhead, which could be converted to a [`java.awt.Shape`](https://docs.oracle.com/en/java/javase/17/docs/api/java.desktop/java/awt/Shape.html) rapidly for painting.
+
+Complex ROIs could be represented and manipulated using [`java.awt.geom.Area`](https://docs.oracle.com/en/java/javase/17/docs/api/java.desktop/java/awt/geom/Area.html).
+
+This worked reasonably, but then a lot of extra code was needed to do interesting stuff for analysis.
+
+Since [*Java Topology Suite* (JTS) is really the standard for that kind of thing](https://en.wikipedia.org/wiki/JTS_Topology_Suite), ROIs were then changed to support easy conversion to a JTS [`Geometry`](https://locationtech.github.io/jts/javadoc/) (with `ROI.getGeometry()` available).
+
+This made a lot of extra functionality possible, including making measurements, combining objects, calculating distances between objects, converting to GeoJSON and so on.
+
+*However*, JTS has a much stricter idea of polygons and multipolygons - which means that a lot of extra code needed to be added to try to ensure ROIs are converted to valid JTS geometries.
+
+For example, a QuPath `PolygonROI` can be drawn interactively and potentially have self-intersections (e.g. a bowtie shape) - but this can't be a single JTS `Polygon`.
+And JTS doesn't support ellipses, so there's no direct counterpart for `EllipseROI`.
+
+For this reason, we can't just use `Geometry` and discard `ROI` - we do need to switch between them.
+The [`GeometryTools`](https://qupath.github.io/javadoc/docs/qupath/lib/roi/GeometryTools.html) class was developed to try to help.
 
 #### The good
 * Fairly simple and self contains - does not include properties about how the ROI is displayed (e.g. line thickness, color)
+* *Most* ROIs can easily be converted to JTS `Geometry` objects, and also to GeoJSON
 
 #### The bad
 * Limited to 2D
-* Some operations rely on being able to convert to a Java Topology Suite `Geometry`, but this potentially imposes some limitations. For example, ellipses and curves can't be fully supported (they need to be 'polygonized' first).
+* Some operations rely on being able to convert to a JTS `Geometry`, but this potentially imposes some limitations. For example, ellipses and curves can't be fully supported (they need to be 'polygonized' first).
 
 
 ### [MeasurementList](https://qupath.github.io/javadoc/docs/qupath/lib/measurements/MeasurementList.html)
